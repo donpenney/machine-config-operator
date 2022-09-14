@@ -1074,13 +1074,14 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 
 	defaultKernel := []string{"kernel", "kernel-core", "kernel-modules", "kernel-modules-extra"}
 	realtimeKernel := []string{"kernel-rt-core", "kernel-rt-modules", "kernel-rt-modules-extra", "kernel-rt-kvm"}
+	addnRealtimeKernel := []string{"kernel-rt-modules-internal"}
 
 	dn.logSystem("Initiating switch from kernel %s to %s", canonicalizeKernelType(oldConfig.Spec.KernelType), canonicalizeKernelType(newConfig.Spec.KernelType))
 
 	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault {
 		args := []string{"override", "reset"}
 		args = append(args, defaultKernel...)
-		for _, pkg := range realtimeKernel {
+		for _, pkg := range append(realtimeKernel, addnRealtimeKernel...) {
 			args = append(args, "--uninstall", pkg)
 		}
 		dn.logSystem("Switching to kernelType=%s, invoking rpm-ostree %+q", newConfig.Spec.KernelType, args)
@@ -1091,8 +1092,10 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 		// Switch to RT kernel
 		args := []string{"override", "remove"}
 		args = append(args, defaultKernel...)
-		for _, pkg := range realtimeKernel {
-			args = append(args, "--install", pkg)
+		for _, pkg := range append(realtimeKernel, addnRealtimeKernel...) {
+			if _, err := exec.Command("rpm", "-q", pkg).CombinedOutput(); err != nil {
+				args = append(args, "--install", pkg)
+			}
 		}
 
 		dn.logSystem("Switching to kernelType=%s, invoking rpm-ostree %+q", newConfig.Spec.KernelType, args)
@@ -1102,6 +1105,12 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime {
 		if oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL {
 			args := []string{"update"}
+			// Install new pkgs
+			for _, pkg := range addnRealtimeKernel {
+				if _, err := exec.Command("rpm", "-q", pkg).CombinedOutput(); err != nil {
+					args = append(args, "--install", pkg)
+				}
+			}
 			dn.logSystem("Updating rt-kernel packages on host: %+q", args)
 			return runRpmOstree(args...)
 		}
