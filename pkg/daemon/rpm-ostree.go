@@ -164,12 +164,17 @@ func podmanInspect(imgURL string) (imgdata *imageInspection, err error) {
 	if _, err := os.Stat(kubeletAuthFile); err == nil {
 		authArgs = append(authArgs, "--authfile", kubeletAuthFile)
 	}
-	args := []string{"pull", "-q"}
-	args = append(args, authArgs...)
-	args = append(args, imgURL)
-	_, err = pivotutils.RunExt(numRetriesNetCommands, "podman", args...)
+
+	existArgs := []string{"image", " exists", imgURL}
+	_, err = pivotutils.RunExt(0, "podman", existArgs...)
 	if err != nil {
-		return
+		args := []string{"pull", "-q"}
+		args = append(args, authArgs...)
+		args = append(args, imgURL)
+		_, err = pivotutils.RunExt(numRetriesNetCommands, "podman", args...)
+		if err != nil {
+			return
+		}
 	}
 
 	inspectArgs := []string{"inspect", "--type=image"}
@@ -303,7 +308,8 @@ func (r *RpmOstreeClient) IsBootableImage(imgURL string) (bool, error) {
 		isBootableImage = imageData.Labels["ostree.bootable"]
 	}
 	// We may have pulled in OSContainer image as fallback during podmanCopy() or podmanInspect()
-	defer exec.Command("podman", "rmi", imgURL).Run()
+	// DPENNEY: Don't delete the image
+	// defer exec.Command("podman", "rmi", imgURL).Run()
 
 	return isBootableImage == "true", nil
 }
